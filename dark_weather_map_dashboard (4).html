@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Weather Map Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #030712; color: white; }
+        .glass-dark { background: rgba(17, 24, 39, 0.95); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        #map { height: 100vh; width: 100%; filter: invert(90%) hue-rotate(180deg) brightness(0.7) contrast(1.2); }
+        .slide-panel { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .search-modal { transition: all 0.3s ease; opacity: 0; pointer-events: none; transform: scale(0.9); }
+        .search-modal.active { opacity: 1; pointer-events: auto; transform: scale(1); }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden">
+
+    <div id="map"></div>
+
+    <button onclick="toggleSearch()" class="absolute top-6 right-6 z-[1000] glass-dark p-4 rounded-2xl hover:bg-indigo-600 transition shadow-xl">
+        <i class="ph ph-magnifying-glass text-2xl"></i>
+    </button>
+
+    <div id="searchOverlay" class="search-modal fixed inset-0 z-[5000] bg-black/60 flex items-center justify-center p-6">
+        <div class="glass-dark w-full max-w-md p-6 rounded-3xl border border-gray-700">
+            <input type="text" id="cityInput" placeholder="Search location..." class="w-full bg-black/50 px-4 py-3 rounded-xl border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white">
+        </div>
+    </div>
+
+    <div id="sidebar" class="slide-panel absolute top-0 left-0 h-full w-[450px] glass-dark z-[2000] p-6 -translate-x-full shadow-2xl flex flex-col border-r border-gray-800">
+        <div class="flex justify-between items-center mb-4">
+            <h1 id="sidebarTitle" class="text-xl font-bold text-indigo-400">Loading...</h1>
+            <button onclick="toggleSidebar(false)" class="p-2 hover:bg-gray-800 rounded-lg"><i class="ph ph-x"></i></button>
+        </div>
+        
+        <div class="flex-1 flex flex-col bg-white rounded-xl overflow-hidden">
+            <iframe id="browserFrame" src="about:blank" class="w-full h-full border-none"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const map = L.map('map', { zoomControl: false }).setView([24.7471, 90.4203], 8);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        
+        let marker = null;
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('searchOverlay');
+
+        function toggleSidebar(show) {
+            show ? sidebar.classList.remove('-translate-x-full') : sidebar.classList.add('-translate-x-full');
+        }
+
+        function toggleSearch() { overlay.classList.toggle('active'); }
+
+        async function updateDashboard(lat, lng, name) {
+            toggleSidebar(true);
+            overlay.classList.remove('active');
+            
+            // নাম পরিষ্কার করা
+            const cleanName = name.split(',')[0].trim();
+            document.getElementById('sidebarTitle').innerText = cleanName;
+            
+            const searchQuery = `${cleanName} weather and news last 24 hours`;
+            document.getElementById('browserFrame').src = `https://www.google.com/search?igu=1&q=${encodeURIComponent(searchQuery)}`;
+            
+            if (marker) marker.setLatLng([lat, lng]);
+            else marker = L.marker([lat, lng]).addTo(map);
+            map.setView([lat, lng], 10);
+        }
+
+        map.on('click', async (e) => {
+            const { lat, lng } = e.latlng;
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`);
+                const data = await res.json();
+                // সব ধরণের নাম পাওয়ার চেষ্টা করছে
+                const name = data.address.city || data.address.town || data.address.village || data.address.county || "Selected Location";
+                updateDashboard(lat, lng, name);
+            } catch(e) { 
+                updateDashboard(lat, lng, "Location"); 
+            }
+        });
+
+        document.getElementById('cityInput').addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const query = e.target.value;
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+                    const data = await res.json();
+                    if (data.length > 0) {
+                        updateDashboard(data[0].lat, data[0].lon, data[0].display_name);
+                    }
+                } catch(err) { console.error("Search failed"); }
+            }
+        });
+    </script>
+</body>
+</html>
