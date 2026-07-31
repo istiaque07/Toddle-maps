@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Material OS - System_Geo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        body { font-family: 'JetBrains Mono', monospace; background: #050505; color: #60a5fa; }
+        .retro-panel { background: #0a0a0a; border: 2px solid #3b82f6; }
+        .retro-button { border: 2px solid #3b82f6; background: transparent; cursor: pointer; color: #60a5fa; }
+        .retro-button:hover { background: #3b82f6; color: #000; }
+        #map { height: 100vh; width: 100%; filter: grayscale(1) invert(1) hue-rotate(200deg) brightness(0.6); }
+        .slide-panel { transition: transform 0.3s ease-in-out; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #000; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; }
+        
+        /* Scanner animation */
+        .scanner-beam {
+            position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+            background: #3b82f6; box-shadow: 0 0 10px #3b82f6;
+            animation: scan 3s linear infinite;
+        }
+        @keyframes scan { 0% { top: 0%; } 100% { top: 100%; } }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden">
+
+    <div id="map"></div>
+    <div class="absolute top-20 right-6 w-32 h-32 z-[500] pointer-events-none border-2 border-[#3b82f6]/50 overflow-hidden hidden" id="scannerBox">
+        <div class="scanner-beam"></div>
+    </div>
+
+    <button onclick="toggleSidebar()" class="absolute top-6 left-6 z-[1000] retro-panel p-4 hover:bg-[#3b82f6] hover:text-black transition">
+        <i class="ph ph-list text-2xl"></i>
+    </button>
+
+    <div id="sidebar" class="slide-panel absolute top-0 left-0 h-full w-96 retro-panel z-[2000] p-6 -translate-x-full flex flex-col border-r-4">
+        <div class="flex justify-between items-center mb-6 border-b-2 border-[#3b82f6] pb-4">
+            <h1 class="text-xl font-bold uppercase tracking-widest text-[#3b82f6]">Sys_Geo_Core</h1>
+            <button onclick="toggleSidebar()"><i class="ph ph-x text-xl"></i></button>
+        </div>
+        
+        <input type="text" id="cityInput" placeholder="> INPUT_COORDINATE..." class="w-full bg-black border-2 border-[#3b82f6] p-3 mb-4 focus:outline-none text-[#3b82f6]">
+        <button onclick="handleSearch()" class="retro-button w-full py-3 mb-6 font-bold uppercase text-sm">Initiate_Query</button>
+
+        <div id="weatherDisplay" class="hidden space-y-4">
+            <div onclick="openWeatherModal()" class="retro-panel p-4 cursor-pointer hover:bg-[#3b82f6] hover:text-black transition">
+                <div id="cityName" class="text-xs uppercase italic">--</div>
+                <div id="temp" class="text-4xl font-black mt-2">--°C</div>
+            </div>
+            <h2 class="text-sm uppercase border-l-4 border-[#3b82f6] pl-2 text-[#3b82f6]">Data_Stream</h2>
+            <div id="newsFeed" class="space-y-2 overflow-y-auto max-h-[300px] custom-scrollbar text-xs"></div>
+        </div>
+    </div>
+
+    <script>
+        const map = L.map('map', { zoomControl: false }).setView([24.7471, 90.4203], 8);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        let marker = null;
+        let currentWeatherData = null;
+
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('-translate-x-full'); }
+        
+        async function updateDashboard(lat, lon, name = null) {
+            document.getElementById('scannerBox').classList.remove('hidden');
+            const locationName = name || await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`).then(r => r.json()).then(d => d.city || "Unknown");
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,wind_speed_10m&hourly=precipitation_probability&timezone=auto`);
+            currentWeatherData = await res.json();
+            
+            document.getElementById('weatherDisplay').classList.remove('hidden');
+            document.getElementById('cityName').innerText = locationName;
+            document.getElementById('temp').innerText = `${Math.round(currentWeatherData.current.temperature_2m)}°C`;
+            
+            if(marker) marker.setLatLng([lat, lon]);
+            else marker = L.marker([lat, lon]).addTo(map);
+            map.setView([lat, lon], 8);
+            fetchNews(locationName);
+            document.getElementById('sidebar').classList.remove('-translate-x-full');
+        }
+
+        async function fetchNews(name) {
+            const feed = document.getElementById('newsFeed');
+            feed.innerHTML = '<p class="text-[10px] italic">Accessing encrypted archives...</p>';
+            try {
+                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://news.google.com/rss/search?q=' + name)}`).then(r => r.json());
+                const xml = new DOMParser().parseFromString(res.contents, "application/xml");
+                const items = Array.from(xml.querySelectorAll("item")).slice(0, 5);
+                feed.innerHTML = items.map(i => `<div class="p-2 border border-[#3b82f6] text-[10px]">[>] ${i.querySelector('title').textContent.substring(0, 45)}...</div>`).join('');
+            } catch (e) { feed.innerHTML = "Error: Stream lost."; }
+        }
+
+        map.on('click', (e) => updateDashboard(e.latlng.lat, e.latlng.lng));
+        async function handleSearch() {
+            const q = document.getElementById('cityInput').value;
+            const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${q}&count=1`).then(r => r.json());
+            if(res.results) updateDashboard(res.results[0].latitude, res.results[0].longitude, res.results[0].name);
+        }
+    </script>
+</body>
+</html>
